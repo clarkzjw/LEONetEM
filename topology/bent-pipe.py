@@ -1,50 +1,75 @@
 """
-h1 - r - PoP - h2
-client - router - PoP - server
+                          Simpilified "Bent-Pipe" topology for Starlink
+
+               192.168.1.1/24                    100.64.0.1/10               10.10.10.101/24
+User  -----------------------  Router  -----------------------  PoP  -----------------------  Dst
+        192.168.1.101/24                 100.76.100.1/10               10.10.10.1/24
+
+## Topology
+
+User:
+User device (e.g., laptop) connected to the Router.
+
+Router:
+The stock Starlink user router provisions a 192.168.1.0/24 network for end devices.
+
+PoP:
+Simplified PoP (Point of Presence) structure combined with landing ground stations.
+In real Starlink networks, there is 1 IP-Hop between the user router to the PoP,
+which traverses the User Dish, (potentially multiple) satellites, landing ground stations, and to the PoP.
+For normal Starlink subscribers, CGNAT is utilized for IPv4, and the PoP / Gateway is always accessible at 100.64.0.1.
+On the WAN side of the router, a address from 100.64.0.1/10 is assigned.
+
+Dst:
+In this topology, we simpilify the connectivity between PoP and destination server.
+In real Starlink networks, network packets exit the PoP go through the IXP and transit to the destination server via terrestrial networks.
+
+## Emulation
+
+In this topology, we emulate the 15s latency handover pattern for the satellite link, i.e., the link between Router and PoP.
+The latency and throughput traces are loaded from CSV files.
+We assume the link between User and Router, and between PoP and Dst are stable and negligible.
 """
 
-import time
 import csv
+import time
 import threading
-import sched
-from mininet.link import TCLink
-from mininet.log import setLogLevel
-from mininet.net import Mininet
 from multiprocessing import Process, Value, Lock
+
 from mininet.cli import CLI
-
-iface1 = "r2-eth0"
-init_flags = {
-    'r3-eth1': False,
-    'r5-eth0': False,
-    'r2-eth1': False,
-    'r4-eth0': False
-}
-
-barrier = threading.Barrier(4)
-line_number_5g = Value('i', 0)
-line_number_starlink = Value('i', 0)
-line_lock = Lock()
-update_event = threading.Event()
-file_counter = Value('i', 0)
+from mininet.net import Mininet, Host
+from mininet.log import setLogLevel
+from mininet.link import TCLink
 
 
-class NetworkConfigThread_Starlink(threading.Thread):
-    def __init__(self, net, host_name, dev, column, barrier, line_number, line_lock, update_event):
+class NetworkConfigThread(threading.Thread):
+    def __init__(self, net, host_name, dev):
         super().__init__()
         self.net = net
         self.host_name = host_name
         self.dev = dev
-        self.column = column
-        self.barrier = barrier
-        self.line_number = line_number
-        self.line_lock = line_lock
-        self.update_event = update_event
 
     def run(self):
-        configureNetworkConditions_starlink(self.net, self.host_name, self.dev, self.column, self.barrier, self.line_number, self.line_lock, self.update_event)
+        configureStaticNetworkConditions(self.net, self.host_name, self.dev)
 
-def configureNetworkConditions_starlink(net, host_name, dev, column, barrier, line_number, line_lock, update_event):
+
+def configureStaticNetworkConditions(net, host_name, dev, delay=100, bw=100, loss=2):
+    host = net.get(host_name)
+    for intf in host.intfList():
+        if intf.link and str(intf) == dev:
+            intfs = [intf.link.intf1, intf.link.intf2]
+            intfs[0].config(bw=bw)
+            intfs[0].config(delay="{}ms".format(delay))
+            intfs[0].config(loss=loss)
+
+            intfs[1].config(bw=bw)
+            intfs[1].config(delay="{}ms".format(delay))
+            intfs[1].config(loss=loss)
+
+            print(intfs[0].config)
+
+
+def configureNetworkConditions(net, host_name, dev, column, barrier, line_number, line_lock, update_event):
     global init_flags
 
     with open('./lagos.csv', 'r') as file:
@@ -105,28 +130,30 @@ if '__main__' == __name__:
     setLogLevel('info')
     net = Mininet(link=TCLink)
 
-    client = net.addHost('client')
-    server = net.addHost('server')
+    user = net.addHost('user')
     router = net.addHost('router')
     pop = net.addHost('pop')
+    dst = net.addHost('dst')
 
-    net.addLink(client, router, cls=TCLink)
-    net.addLink(router, pop, cls=TCLink)
-    net.addLink(pop, server, cls=TCLink)
+    linkopt = {'bw': 1000}
+    # delay is one way delay
+    linkopt_starlink = {'bw': 100, 'delay': "100ms", 'loss': 2}
+
+    net.addLink(user, router, cls=TCLink, **linkopt)
+    net.addLink(router, pop, cls=TCLink, **linkopt_starlink)
+    net.addLink(pop, dst, cls=TCLink, **linkopt)
     net.build()
 
-    client.cmd("ifconfig client-eth0 0")
-    client.cmd("ifconfig client-eth0 192.168.1.101 netmask 255.255.255.0")
-    client.cmd("ip route add default scope global nexthop via 192.168.1.1 dev client-eth0")
-    client.cmd("ip route add 10.10.10.0/24 via 192.168.1.1")
+    user.cmd("ifconfig user-eth0 0")
+    user.cmd("ifconfig user-eth0 192.168.1.101 netmask 255.255.255.0")
+    user.cmd("ip route add default scope global nexthop via 192.168.1.1 dev user-eth0")
+    user.cmd("ip route add 10.10.10.0/24 via 192.168.1.1")
 
     router.cmd("ifconfig router-eth0 0")
     router.cmd("ifconfig router-eth1 0")
     router.cmd("echo 1 > /proc/sys/net/ipv4/ip_forward")
     router.cmd("echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp")
     router.cmd("ifconfig router-eth0 192.168.1.1 netmask 255.255.255.0")
-    # 100.64.0.0/10
-    # assume the WAN side IP of the router is 100.76.100.1
     router.cmd("ifconfig router-eth1 100.76.100.1 netmask 255.192.0.0")
     router.cmd("ip route add default scope global nexthop via 100.64.0.1 dev router-eth0")
     router.cmd("ip route add 10.10.10.0/24 via 100.64.0.1")
@@ -136,25 +163,16 @@ if '__main__' == __name__:
     pop.cmd("echo 1 > /proc/sys/net/ipv4/ip_forward")
     pop.cmd("echo 1 > /proc/sys/net/ipv4/conf/all/proxy_arp")
     pop.cmd("ifconfig pop-eth0 100.64.0.1 netmask 255.192.0.0")
-    # the link between PoP and server is simplified
     pop.cmd("ifconfig pop-eth1 10.10.10.1 netmask 255.255.255.0")
     pop.cmd("ip route add 192.168.1.0/24 via 100.76.100.1")
 
-    server.cmd("ifconfig server-eth0 0")
-    server.cmd("ifconfig server-eth0 10.10.10.101 netmask 255.255.255.0")
-    server.cmd("ip route add default scope global nexthop via 10.10.10.101 dev server-eth0")
+    dst.cmd("ifconfig dst-eth0 0")
+    dst.cmd("ifconfig dst-eth0 10.10.10.101 netmask 255.255.255.0")
+    dst.cmd("ip route add default scope global nexthop via 10.10.10.101 dev dst-eth0")
 
-    # network_thread2 = NetworkConfigThread_Starlink(net, 'r2', 'r2-eth1', 3, barrier, line_number_starlink, line_lock, update_event)
-    # network_thread4 = NetworkConfigThread_Starlink(net, 'r4', 'r4-eth0', 2, barrier, line_number_starlink, line_lock, update_event)
-
-    # network_thread2.start()
-    # network_thread4.start()
-
-    # scheduler = sched.scheduler(time.time, time.sleep)
-    # start_time = time.perf_counter()
-    # scheduler.enter(0.1, 1, update_lines_periodically, (scheduler, 0.1, start_time))
-    # update_thread = threading.Thread(target=scheduler.run)
-    # update_thread.start()
+    net_thread = NetworkConfigThread(net, "router", "router-eth1")
+    net_thread.start()
+    net_thread.join()
 
     CLI(net)
     net.stop()
