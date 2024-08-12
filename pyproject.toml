@@ -4,10 +4,10 @@ version = "0.1.0"
 description = "Network Emulator"
 authors = ["clarkzjw <clarkzjw@uvic.ca>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.10"
-mininet = "^2.3.0.dev6"
 numpy = "^2.0.1"
 
 
