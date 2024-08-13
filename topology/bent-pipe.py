@@ -33,7 +33,9 @@ We assume the link between User and Router, and between PoP and Dst are stable a
 
 import csv
 import time
+import sched
 import threading
+from collections import defaultdict
 from multiprocessing import Process, Value, Lock
 
 from mininet.cli import CLI
@@ -42,88 +44,80 @@ from mininet.log import setLogLevel
 from mininet.link import TCLink
 
 
+update_event = threading.Event()
+latency_update_interval = 1
+
+
 class NetworkConfigThread(threading.Thread):
-    def __init__(self, net, host_name, dev):
+    def __init__(self, net, host_name, dev, latency_trace=None):
         super().__init__()
         self.net = net
         self.host_name = host_name
         self.dev = dev
+        self.latency = defaultdict(float)
+        self.start_time = None
+        if latency_trace:
+            self.latency_trace = self.load_latency_trace(latency_trace)
+
+    def load_latency_trace(self, filename: str):
+        with open(filename, "r") as csv_file:
+            reader = csv.reader(csv_file)
+            next(reader)
+            for row in reader:
+                self.latency[float(row[1])] = float(row[2])
+
+    def get_closest_latency(self) -> float:
+        now_relative = time.time() - self.start_time
+        closest_time = min(self.latency.keys(), key=lambda x: abs(x - now_relative))
+        return self.latency[closest_time] / 2.0
+
+
+    def configureNetworkConditions(self):
+        self.configureStaticNetworkConditions()
+
+        while True:
+            update_event.wait()
+            now = time.time()
+            delay = self.get_closest_latency()
+            print("\nUpdate network conditions, now: {}, {} seconds passed, latency: {}".format(now, now - self.start_time, delay))
+            self.configureStaticNetworkConditions(delay=delay)
+            update_event.clear()
+
+
+    def configureStaticNetworkConditions(self, delay=100, bw=100, loss=2):
+        host = self.net.get(self.host_name)
+        for intf in host.intfList():
+            if intf.link and str(intf) == self.dev:
+                intfs = [intf.link.intf1, intf.link.intf2]
+                # intfs[0].config(bw=bw)
+                intfs[0].config(delay="{}ms".format(delay))
+                intfs[0].config(loss=loss)
+
+                # intfs[1].config(bw=bw)
+                intfs[1].config(delay="{}ms".format(delay))
+                intfs[1].config(loss=loss)
 
     def run(self):
-        configureStaticNetworkConditions(self.net, self.host_name, self.dev)
+        self.start_time = time.time()
+
+        scheduler = sched.scheduler(time.time, time.sleep)
+        scheduler.enter(latency_update_interval, 1, update_periodically, (scheduler, self.start_time, latency_update_interval))
+        update_thread = threading.Thread(target=scheduler.run)
+        update_thread.start()
+
+        self.configureNetworkConditions()
 
 
-def configureStaticNetworkConditions(net, host_name, dev, delay=100, bw=100, loss=2):
-    host = net.get(host_name)
-    for intf in host.intfList():
-        if intf.link and str(intf) == dev:
-            intfs = [intf.link.intf1, intf.link.intf2]
-            intfs[0].config(bw=bw)
-            intfs[0].config(delay="{}ms".format(delay))
-            intfs[0].config(loss=loss)
-
-            intfs[1].config(bw=bw)
-            intfs[1].config(delay="{}ms".format(delay))
-            intfs[1].config(loss=loss)
-
-            print(intfs[0].config)
-
-
-def configureNetworkConditions(net, host_name, dev, column, barrier, line_number, line_lock, update_event):
-    global init_flags
-
-    with open('./lagos.csv', 'r') as file:
-        reader = csv.reader(file)
-        latency_lines = list(reader)
-
-    host = net.get(host_name)
-
-    with line_lock:
-        initialBW = float(latency_lines[line_number.value][column - 2])
-        cmd_bw = 'tc qdisc replace dev {} root handle 1: tbf rate {}mbit burst 15k latency 50ms'.format(dev, initialBW)
-        host.cmd(cmd_bw)
-
-        initialDelay = float(latency_lines[line_number.value][column])
-        cmd_jitter = 'tc qdisc add dev {} parent 1:1 handle 10: netem delay {}ms loss 2%'.format(dev, initialDelay)
-        host.cmd(cmd_jitter)
-
-        if not init_flags[dev]:
-            init_flags[dev] = True
-            # check_and_start_test()
-
-    barrier.wait()
-
-    while True:
-        update_event.wait()
-        update_event.clear()
-
-        with line_lock:
-            current_line_number = line_number.value
-            currentBW = float(latency_lines[current_line_number][column - 2])
-            update_cmd_bw = 'tc qdisc change dev {} root handle 1: tbf rate {}mbit burst 15k latency 50ms'.format(dev, currentBW)
-            host.cmd(update_cmd_bw)
-
-            currentDelay = float(latency_lines[current_line_number][column])
-            update_cmd = 'tc qdisc change dev {} parent 1:1 handle 10: netem delay {}ms loss 2%'.format(dev, currentDelay)
-            host.cmd(update_cmd)
-
-        barrier.wait()
-
-def update_lines_periodically(scheduler, step, start_time):
-    global line_number_5g, line_number_starlink
-    with line_lock:
-        line_number_5g.value = (line_number_5g.value + 1) % len(open('./5G.csv').readlines())
-        line_number_starlink.value = (line_number_starlink.value + 1) % len(open('./lagos.csv').readlines())
-    update_event.set()
-
+def update_periodically(scheduler, start_time, step):
     next_time = start_time + step
-    current_time = time.perf_counter()
+    current_time = time.time()
     sleep_time = next_time - current_time
 
     if sleep_time > 0:
-        scheduler.enter(sleep_time, 1, update_lines_periodically, (scheduler, step, next_time))
+        update_event.set()
+        scheduler.enter(sleep_time, 1, update_periodically, (scheduler, next_time, step))
     else:
-        scheduler.enter(0, 1, update_lines_periodically, (scheduler, step, time.perf_counter()))
+        scheduler.enter(0, 1, update_periodically, (scheduler, time.time(), step))
 
 
 if '__main__' == __name__:
@@ -170,9 +164,9 @@ if '__main__' == __name__:
     dst.cmd("ifconfig dst-eth0 10.10.10.101 netmask 255.255.255.0")
     dst.cmd("ip route add default scope global nexthop via 10.10.10.101 dev dst-eth0")
 
-    net_thread = NetworkConfigThread(net, "router", "router-eth1")
+    net_thread = NetworkConfigThread(net, "router", "router-eth1", "../latency/ping-frntdeu1-10ms-1h-2024-08-12-19-00-00.csv")
     net_thread.start()
-    net_thread.join()
 
+    net_thread.join()
     CLI(net)
     net.stop()
