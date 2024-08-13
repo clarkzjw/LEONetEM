@@ -38,25 +38,25 @@ The stock Starlink user router provisions a `192.168.1.0/24` network for end dev
 
 Simplified PoP (Point of Presence) structure combined with landing ground stations.
 
-In real Starlink networks, there is 1 IP-Hop between the user router to the PoP, which traverses the User Dish, (potentially multiple) satellites, landing ground stations, and to the PoP.
+In real Starlink networks, there is 1 IP-Hop between the user router to the PoP, which traverses the User Dish, (potentially multiple) satellites, landing ground stations, then finally to the gateway at the PoP.
 
-For normal Starlink subscribers, CGNAT is utilized for IPv4, and the PoP / Gateway is always accessible at `100.64.0.1`.
+For normal Starlink subscribers, CGNAT is utilized for IPv4, and the gateway / PoP is always accessible at `100.64.0.1`.
 
-On the WAN side of the router, a address from `100.64.0.1/10` is assigned.
+On the WAN side of the router, an address from `100.64.0.1/10` is assigned.
 
 **Dst**
 
-In this topology, we simpilify the connectivity between PoP and destination server.
+In this topology, we simpilify the connectivity between PoP and destination servers.
 
-In real Starlink networks, network packets exit the PoP go through the IXP and transit to the destination server via terrestrial networks.
+In real Starlink networks, network packets exiting the PoP go through IXPs and transit to the destination server via terrestrial networks.
 
 ## Emulation
 
-In this topology, we emulate the 15s latency handover pattern for the satellite link, i.e., the link between Router and PoP.
+In this topology, we emulate the 15s latency handover pattern for the satellite link, i.e., the link between the `Router` and `PoP`.
 
-The latency and throughput traces are loaded from CSV files.
+The latency traces are loaded from CSV files.
 
-We assume the link between User and Router, and between PoP and Dst are stable and negligible.
+We assume the link between the `User` and `Router`, and between `PoP` and `Dst` are stable and negligible.
 
 ## Note
 
@@ -64,25 +64,27 @@ We assume the link between User and Router, and between PoP and Dst are stable a
 
 When installing Mininet on a headless server, you may need to install X11 related utilities and enable X11-forwarding for SSH.
 
-Some useful notes:
+Some useful settings are provided below.
 
-#### On the server:
+#### On the server
 
 Enable X11 forwarding in `/etc/ssh/sshd_config` with `X11Forwarding yes` and restart sshd.
 
+Create an empty `.Xauthority` file if not exists in the $HOME directory,
+
 ```bash
-touch /home/<username>/.Xauthority
+touch $HOME/.Xauthority
 ```
 
-add the following line to `~/.bash_profile` or `~/.bashrc`:
+add the following line to `~/.bashrc` or other shell configuration files,
 
 ```bash
 export XAUTHORITY=$HOME/.Xauthority
 ```
 
-#### On the client:
+#### On the client
 
-`~/.ssh/config`:
+Enable X11 forwarding in `$HOME/.ssh/config`:
 
 ```
 Host *
