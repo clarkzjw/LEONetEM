@@ -30,7 +30,6 @@ def convert_ping_csv(file_path: str) -> None:
 
 if __name__ == "__main__":
     p = Pool(2)
-    irtt_job = []
     ping_job = []
 
     path = Path(raw_dir)
@@ -39,10 +38,7 @@ if __name__ == "__main__":
             for f in files:
                 if f.endswith(".txt") and f.startswith("ping"):
                     ping_job.append(str(Path(dirpath).joinpath(f)))
-                if f.endswith(".json") and f.startswith("irtt"):
-                    irtt_job.append(str(Path(dirpath).joinpath(f)))
 
-    irtt_job.sort(key=str.lower)
     ping_job.sort(key=str.lower)
     start = time.time()
     p.map(convert_ping_csv, ping_job)

@@ -34,6 +34,7 @@ We assume the link between User and Router, and between PoP and Dst are stable a
 import csv
 import time
 import sched
+import argparse
 import threading
 from collections import defaultdict
 from multiprocessing import Process, Value, Lock
@@ -121,6 +122,16 @@ def update_periodically(scheduler, start_time, step):
 
 
 if '__main__' == __name__:
+    parser = argparse.ArgumentParser(description='LEONetEM')
+    parser.add_argument('--latency', type=str, help='Latency trace file in CSV format')
+    args = parser.parse_args()
+
+    if not args.latency:
+        print("Please specify the latency trace file")
+        exit(1)
+
+    print(args.latency)
+
     setLogLevel('info')
     net = Mininet(link=TCLink)
 
@@ -164,7 +175,7 @@ if '__main__' == __name__:
     dst.cmd("ifconfig dst-eth0 10.10.10.101 netmask 255.255.255.0")
     dst.cmd("ip route add default scope global nexthop via 10.10.10.101 dev dst-eth0")
 
-    net_thread = NetworkConfigThread(net, "router", "router-eth1", "../latency/ping-frntdeu1-10ms-1h-2024-08-12-19-00-00.csv")
+    net_thread = NetworkConfigThread(net, "router", "router-eth1", args.latency)
     net_thread.start()
 
     net_thread.join()
