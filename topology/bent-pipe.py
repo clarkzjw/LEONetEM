@@ -67,11 +67,10 @@ class NetworkConfigThread(threading.Thread):
             for row in reader:
                 self.latency[float(row[1])] = float(row[2])
 
-    def get_closest_latency(self) -> float:
+    def get_closest_latency(self) -> int:
         now_relative = time.time() - self.start_time
         closest_time = min(self.latency.keys(), key=lambda x: abs(x - now_relative))
-        return self.latency[closest_time] / 2.0
-
+        return int(self.latency[closest_time] / 2.0)
 
     def configureNetworkConditions(self):
         self.configureStaticNetworkConditions()
@@ -80,23 +79,16 @@ class NetworkConfigThread(threading.Thread):
             update_event.wait()
             now = time.time()
             delay = self.get_closest_latency()
-            print("\nUpdate network conditions, now: {}, {} seconds passed, latency: {}".format(now, now - self.start_time, delay))
             self.configureStaticNetworkConditions(delay=delay)
             update_event.clear()
 
-
-    def configureStaticNetworkConditions(self, delay=100, bw=100, loss=2):
+    def configureStaticNetworkConditions(self, delay=100, bw=100, loss=0):
         host = self.net.get(self.host_name)
         for intf in host.intfList():
             if intf.link and str(intf) == self.dev:
                 intfs = [intf.link.intf1, intf.link.intf2]
-                # intfs[0].config(bw=bw)
-                intfs[0].config(delay="{}ms".format(delay))
-                intfs[0].config(loss=loss)
-
-                # intfs[1].config(bw=bw)
-                intfs[1].config(delay="{}ms".format(delay))
-                intfs[1].config(loss=loss)
+                intfs[0].config(delay="{}ms".format(delay), loss=loss)
+                intfs[1].config(delay="{}ms".format(delay), loss=loss)
 
     def run(self):
         self.start_time = time.time()
@@ -121,7 +113,7 @@ def update_periodically(scheduler, start_time, step):
         scheduler.enter(0, 1, update_periodically, (scheduler, time.time(), step))
 
 
-if '__main__' == __name__:
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='LEONetEM')
     parser.add_argument('--latency', type=str, help='Latency trace file in CSV format')
     args = parser.parse_args()
@@ -141,8 +133,7 @@ if '__main__' == __name__:
     dst = net.addHost('dst')
 
     linkopt = {'bw': 1000}
-    # delay is one way delay
-    linkopt_starlink = {'bw': 100, 'delay': "100ms", 'loss': 2}
+    linkopt_starlink = {'bw': 100, 'delay': "100ms", 'loss': 0}
 
     net.addLink(user, router, cls=TCLink, **linkopt)
     net.addLink(router, pop, cls=TCLink, **linkopt_starlink)
@@ -178,6 +169,7 @@ if '__main__' == __name__:
     net_thread = NetworkConfigThread(net, "router", "router-eth1", args.latency)
     net_thread.start()
 
-    net_thread.join()
-    CLI(net)
+    # replace with custom command
+    output = user.cmd("ping -D 100.64.0.1 -i 0.01 -c 1000 > ping.log")
+
     net.stop()
