@@ -10,7 +10,15 @@ See [Mininet on headless server](#mininet-on-headless-server) when running on a 
 
 ## Topology
 
+For more information about the Starlink access network topology, please refer to:
+
+* [**Measuring the Satellite Links of a LEO Network**](https://pan.uvic.ca/webb/download/file.php?id=42372), Jianping Pan, Jinwei Zhao, Lin Cai, 2024 IEEE 59th International Conference on Communications (ICC'24)
+* [**Measuring a Low-Earth-Orbit Satellite Network**](https://ieeexplore.ieee.org/document/10294034), Jianping Pan, Jinwei Zhao, Lin Cai
+2023 IEEE 34th Annual International Symposium on Personal, Indoor and Mobile Radio Communications (PIMRC'23), doi: 10.1109/PIMRC56721.2023.10294034
+
 ### Simpilified "Bent-Pipe" topology for Starlink
+
+See [`bent-pipe.py`](./topology/bent-pipe.py).
 
 ```
             192.168.1.1/24                  100.64.0.1/10             10.10.10.101/24
@@ -24,7 +32,7 @@ User device (e.g., laptop) connected to the Router.
 
 **Router**
 
-The stock Starlink user router provisions a 192.168.1.0/24 network for end devices.
+The stock Starlink user router provisions a `192.168.1.0/24` network for end devices.
 
 **PoP**
 
@@ -32,9 +40,9 @@ Simplified PoP (Point of Presence) structure combined with landing ground statio
 
 In real Starlink networks, there is 1 IP-Hop between the user router to the PoP, which traverses the User Dish, (potentially multiple) satellites, landing ground stations, and to the PoP.
 
-For normal Starlink subscribers, CGNAT is utilized for IPv4, and the PoP / Gateway is always accessible at 100.64.0.1.
+For normal Starlink subscribers, CGNAT is utilized for IPv4, and the PoP / Gateway is always accessible at `100.64.0.1`.
 
-On the WAN side of the router, a address from 100.64.0.1/10 is assigned.
+On the WAN side of the router, a address from `100.64.0.1/10` is assigned.
 
 **Dst**
 
