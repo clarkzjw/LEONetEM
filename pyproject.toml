@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "netem"
+name = "leonetem"
 version = "0.1.0"
-description = "Network Emulator"
+description = "LEO Network Emulator"
 authors = ["clarkzjw <clarkzjw@uvic.ca>"]
 readme = "README.md"
 package-mode = false
